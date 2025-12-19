@@ -17,7 +17,9 @@ app.use(cors({
   origin: [
     'http://localhost:3000',
     'http://localhost:5173',
-    'https://bytepostorg.vercel.app'
+    'https://bytepostorg.vercel.app',
+    'https://drefuz.info',
+    'https://www.drefuz.info'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
