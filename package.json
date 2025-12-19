@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "npm exec -- tsc || node node_modules/typescript/lib/tsc.js",
+    "postinstall": "npm rebuild sqlite3",
+    "build": "npm rebuild sqlite3 && npm exec -- tsc || node node_modules/typescript/lib/tsc.js",
     "start": "node dist/index.js"
   },
   "dependencies": {
