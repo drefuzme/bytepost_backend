@@ -1,0 +1,14 @@
+[33m716ed25[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m fixing
+[33ma1b9eeb[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m fixing bugs
+[33mb31a021[m changed
+[33m6e8eae8[m changed
+[33mb849a41[m changed
+[33m3b01b75[m changed
+[33m1ebfec1[m changed
+[33m28fdc28[m Fix sqlite3 native module rebuild for Railway Linux environment
+[33me545537[m Fix TypeScript compilation errors for Railway deployment
+[33m5e0b689[m changed
+[33m7feac86[m Fixed bugs
+[33m4590b83[m backend changed
+[33mdec1877[m backend
+[33m47ee9ed[m first commit
