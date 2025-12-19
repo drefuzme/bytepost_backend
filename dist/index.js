@@ -3,21 +3,14 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
 const app = express();
 const PORT = process.env.PORT || 8080;
-
-// Middlewares
-app.use(cors({
-    origin: '*' // yoki faqat frontend domenini yozing
-}));
+app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
 // Routes
 import authRoutes from './routes/auth.js';
 import repoRoutes from './routes/repositories.js';
@@ -37,8 +30,6 @@ import notificationsRoutes from './routes/notifications.js';
 import searchRoutes from './routes/search.js';
 import uploadFilesRoutes from './routes/upload-files.js';
 import adminRoutes from './routes/admin.js';
-
-// API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/repos', repoRoutes);
 app.use('/api/repos', deployTokenRoutes);
@@ -56,24 +47,15 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/repos', uploadFilesRoutes);
 app.use('/api/admin', adminRoutes);
-
 // Serve uploaded files
 app.use('/uploads', express.static(join(__dirname, '../uploads')));
-
-// Git HTTP backend
+// Git HTTP backend (for git clone/push)
 app.use('/', gitHttpRoutes);
-
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'BytePost API is running' });
 });
-
-// Test route (frontend uchun)
-app.get('/api/test', (req, res) => {
-    res.json({ message: "API ishlayapti!" });
-});
-
-// Start server
 app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(` Server is running on http://localhost:${PORT}`);
 });
+//# sourceMappingURL=index.js.map
