@@ -290,15 +290,12 @@ router.get('/:owner/:repo/info', optionalAuthenticate, async (req: AuthRequest, 
     let normalizedCurrentBranch = branches.current;
     if (branches.current === 'master' && branches.all.includes('main')) {
       // If both exist, prefer 'main'
-      normalizedCurrentBranch = 'main';
       // Checkout to main if not already there
-      if (branches.current !== 'main') {
-        try {
-          await git.checkout('main');
-          normalizedCurrentBranch = 'main';
-        } catch (e) {
-          console.log('Could not checkout to main, keeping master');
-        }
+      try {
+        await git.checkout('main');
+        normalizedCurrentBranch = 'main';
+      } catch (e) {
+        console.log('Could not checkout to main, keeping master');
       }
     } else if (!branches.all.includes('main') && branches.current === 'master') {
       // If only master exists, we can optionally rename it to main
@@ -311,7 +308,7 @@ router.get('/:owner/:repo/info', optionalAuthenticate, async (req: AuthRequest, 
     try {
       // First try with simple-git log
       const log = await git.log({ maxCount: 10 });
-      commits = log.all || [];
+      commits = (log.all || []) as any[];
       console.log('Git log result (simple-git):', { 
         commitCount: commits.length, 
         commits: commits.map((c: any) => ({ 
