@@ -238,34 +238,47 @@ router.get('/:owner/:repo/info', optionalAuthenticate, async (req, res) => {
         // Try to fetch latest changes before getting info
         try {
             await git.fetch('origin').catch(() => { });
-            const branches = await git.branchLocal();
-            const currentBranch = branches.current || 'main';
-            await git.pull('origin', currentBranch).catch(() => { });
         }
         catch (e) {
-            // Ignore fetch/pull errors
+            // Ignore fetch errors
         }
-        // Get branches
-        const branches = await git.branchLocal();
-        console.log('Git branches:', { all: branches.all, current: branches.current });
-        // Normalize branch name: if current is 'master' but 'main' exists, prefer 'main'
-        // If only 'master' exists, keep it as is
-        let normalizedCurrentBranch = branches.current;
-        if (branches.current === 'master' && branches.all.includes('main')) {
-            // If both exist, prefer 'main'
-            // Checkout to main if not already there
-            try {
-                await git.checkout('main');
-                normalizedCurrentBranch = 'main';
+        // Get branches with error handling
+        let branches = { all: [], current: 'main' };
+        let normalizedCurrentBranch = 'main';
+        try {
+            branches = await git.branchLocal();
+            console.log('Git branches:', { all: branches.all, current: branches.current });
+            if (!branches.all || branches.all.length === 0) {
+                // Empty repository - create initial branch if needed
+                try {
+                    await git.checkout(['-b', 'main']).catch(() => { });
+                    branches = { all: ['main'], current: 'main' };
+                }
+                catch (e) {
+                    // If we can't create branch, use defaults
+                    branches = { all: ['main'], current: 'main' };
+                }
             }
-            catch (e) {
-                console.log('Could not checkout to main, keeping master');
+            normalizedCurrentBranch = branches.current || 'main';
+            // Normalize branch name: if current is 'master' but 'main' exists, prefer 'main'
+            if (branches.current === 'master' && branches.all.includes('main')) {
+                try {
+                    await git.checkout('main');
+                    normalizedCurrentBranch = 'main';
+                }
+                catch (e) {
+                    console.log('Could not checkout to main, keeping master');
+                }
+            }
+            else if (!branches.all.includes('main') && branches.current === 'master') {
+                normalizedCurrentBranch = 'master';
             }
         }
-        else if (!branches.all.includes('main') && branches.current === 'master') {
-            // If only master exists, we can optionally rename it to main
-            // But for now, just keep it as master
-            normalizedCurrentBranch = 'master';
+        catch (branchError) {
+            console.error('Error getting git branches:', branchError.message);
+            // Use defaults if branch operations fail
+            branches = { all: ['main'], current: 'main' };
+            normalizedCurrentBranch = 'main';
         }
         // Get latest commits
         let commits = [];
@@ -326,7 +339,27 @@ router.get('/:owner/:repo/info', optionalAuthenticate, async (req, res) => {
             }
         }
         // Get status
-        const status = await git.status();
+        let status = {
+            current: normalizedCurrentBranch,
+            tracking: null,
+            ahead: 0,
+            behind: 0,
+            files: []
+        };
+        try {
+            const gitStatus = await git.status();
+            status = {
+                current: gitStatus.current || normalizedCurrentBranch,
+                tracking: gitStatus.tracking || null,
+                ahead: gitStatus.ahead || 0,
+                behind: gitStatus.behind || 0,
+                files: gitStatus.files || []
+            };
+        }
+        catch (statusError) {
+            console.error('Error getting git status:', statusError.message);
+            // Use default status if status fails
+        }
         console.log('Git info: Sending response', {
             branchesCount: branches.all?.length || 0,
             currentBranch: normalizedCurrentBranch,
@@ -336,21 +369,20 @@ router.get('/:owner/:repo/info', optionalAuthenticate, async (req, res) => {
             userId: req.user?.userId
         });
         res.json({
-            branches: branches.all,
-            currentBranch: normalizedCurrentBranch,
-            commits: commits,
-            status: {
-                current: status.current,
-                tracking: status.tracking,
-                ahead: status.ahead,
-                behind: status.behind,
-                files: status.files
-            }
+            branches: branches.all || [],
+            currentBranch: normalizedCurrentBranch || 'main',
+            commits: commits || [],
+            status: status
         });
     }
     catch (error) {
         console.error('Get git info error:', error);
-        res.status(500).json({ error: 'Server xatosi' });
+        console.error('Error stack:', error.stack);
+        res.status(500).json({
+            error: 'Server xatosi',
+            message: error.message,
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 });
 // Helper function to recursively get files from filesystem

@@ -8,11 +8,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
+// CORS configuration with frontend URL
 app.use(cors({
     origin: [
         'http://localhost:3000',
         'http://localhost:5173',
-        'https://bytepostorg.vercel.app'
+        'https://bytepostorg.vercel.app',
+        'https://drefuz.info',
+        'https://www.drefuz.info'
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],

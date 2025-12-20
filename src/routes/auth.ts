@@ -2,10 +2,41 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
-import { dbRun, dbGet } from '../database/db.js';
+import nodemailer from 'nodemailer';
+import { dbRun, dbGet, dbAll } from '../database/db.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+// Email transporter configuration
+const createTransporter = () => {
+  // For development, use Ethereal Email (fake SMTP)
+  // For production, configure real SMTP settings
+  if (process.env.NODE_ENV === 'production' && process.env.SMTP_HOST) {
+    return nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+  } else {
+    // Development: Use console logging instead of real email
+    return {
+      sendMail: async (options: any) => {
+        console.log('\n📧 EMAIL (Development Mode):');
+        console.log('To:', options.to);
+        console.log('Subject:', options.subject);
+        console.log('Reset Link:', options.text.match(/http[^\s]+/)?.[0] || 'Link not found');
+        console.log('---\n');
+        return { messageId: 'dev-email-id' };
+      },
+    };
+  }
+};
 
 // Register
 router.post('/register', async (req, res) => {
@@ -129,6 +160,126 @@ router.get('/token', async (req, res) => {
     });
   } catch (error: any) {
     res.status(401).json({ error: 'Yaroqsiz token', valid: false });
+  }
+});
+
+// Forgot Password
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email kiritilishi kerak' });
+    }
+
+    // Find user
+    const user: any = await dbGet('SELECT * FROM users WHERE email = ?', [email]);
+    if (!user) {
+      // Don't reveal if user exists for security
+      return res.json({ 
+        message: 'Agar bu email bilan hisob mavjud bo\'lsa, parolni tiklash havolasi emailga yuborildi' 
+      });
+    }
+
+    // Generate reset token
+    const resetToken = uuidv4();
+    const tokenId = uuidv4();
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1); // Token expires in 1 hour
+
+    // Delete old unused tokens for this user
+    await dbRun(
+      'DELETE FROM password_reset_tokens WHERE user_id = ? AND used = 0',
+      [user.id]
+    );
+
+    // Save reset token
+    await dbRun(
+      'INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)',
+      [tokenId, user.id, resetToken, expiresAt.toISOString()]
+    );
+
+    // Send email
+    const resetLink = `${FRONTEND_URL}/reset-password?token=${resetToken}`;
+    const transporter = createTransporter();
+
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || 'noreply@bytepost.com',
+      to: email,
+      subject: 'BytePost - Parolni tiklash',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #2563eb;">Parolni tiklash</h2>
+          <p>Salom ${user.username},</p>
+          <p>Parolni tiklash so'rovi qabul qilindi. Quyidagi havolani bosib parolni yangilang:</p>
+          <p style="margin: 20px 0;">
+            <a href="${resetLink}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+              Parolni tiklash
+            </a>
+          </p>
+          <p>Yoki quyidagi havolani brauzerda oching:</p>
+          <p style="color: #6b7280; word-break: break-all;">${resetLink}</p>
+          <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+            Bu havola 1 soatdan keyin muddati tugaydi.<br>
+            Agar siz bu so'rovni qilmagan bo'lsangiz, bu xatni e'tiborsiz qoldiring.
+          </p>
+        </div>
+      `,
+      text: `Parolni tiklash uchun quyidagi havolani oching: ${resetLink}`,
+    });
+
+    res.json({ 
+      message: 'Agar bu email bilan hisob mavjud bo\'lsa, parolni tiklash havolasi emailga yuborildi' 
+    });
+  } catch (error: any) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'Server xatosi', details: error.message });
+  }
+});
+
+// Reset Password
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ error: 'Token va yangi parol kiritilishi kerak' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Parol kamida 6 belgidan iborat bo\'lishi kerak' });
+    }
+
+    // Find reset token
+    const resetToken: any = await dbGet(
+      'SELECT * FROM password_reset_tokens WHERE token = ? AND used = 0',
+      [token]
+    );
+
+    if (!resetToken) {
+      return res.status(400).json({ error: 'Yaroqsiz yoki muddati o\'tgan token' });
+    }
+
+    // Check if token is expired
+    const expiresAt = new Date(resetToken.expires_at);
+    if (expiresAt < new Date()) {
+      await dbRun('UPDATE password_reset_tokens SET used = 1 WHERE id = ?', [resetToken.id]);
+      return res.status(400).json({ error: 'Token muddati o\'tgan' });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Update user password
+    await dbRun('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, resetToken.user_id]);
+
+    // Mark token as used
+    await dbRun('UPDATE password_reset_tokens SET used = 1 WHERE id = ?', [resetToken.id]);
+
+    res.json({ message: 'Parol muvaffaqiyatli yangilandi' });
+  } catch (error: any) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Server xatosi', details: error.message });
   }
 });
 

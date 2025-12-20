@@ -609,5 +609,101 @@ router.delete('/:owner/:repo/collaborators/:userId', authenticate, async (req: A
   }
 });
 
+// Activity endpoints for dashboard
+router.get('/activity/issues', optionalAuthenticate, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.userId;
+    let query = `
+      SELECT 
+        i.*,
+        r.name as repo_name,
+        u1.username as owner_username,
+        u2.username as author_username,
+        u2.avatar_url as author_avatar,
+        u2.icon_type as author_icon_type
+      FROM issues i
+      JOIN repositories r ON i.repository_id = r.id
+      JOIN users u1 ON r.owner_id = u1.id
+      JOIN users u2 ON i.author_id = u2.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+
+    // If authenticated, show issues from user's repos and collaborated repos
+    if (userId) {
+      query += ` AND (
+        r.owner_id = ? OR 
+        r.id IN (SELECT repository_id FROM repository_collaborators WHERE user_id = ?) OR
+        r.is_private = 0
+      )`;
+      params.push(userId, userId);
+    } else {
+      // If not authenticated, only show public repos
+      query += ` AND r.is_private = 0`;
+    }
+
+    query += ` ORDER BY i.created_at DESC LIMIT 20`;
+
+    const issues = await dbAll(query, params);
+    res.json(issues);
+  } catch (error: any) {
+    console.error('Get activity issues error:', error);
+    res.status(500).json({ error: 'Server xatosi' });
+  }
+});
+
+router.get('/activity/pulls', optionalAuthenticate, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.userId;
+    let query = `
+      SELECT 
+        pr.*,
+        r.name as repo_name,
+        u1.username as owner_username,
+        u2.username as author_username,
+        u2.avatar_url as author_avatar,
+        u2.icon_type as author_icon_type
+      FROM pull_requests pr
+      JOIN repositories r ON pr.repository_id = r.id
+      JOIN users u1 ON r.owner_id = u1.id
+      JOIN users u2 ON pr.author_id = u2.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+
+    // If authenticated, show PRs from user's repos and collaborated repos
+    if (userId) {
+      query += ` AND (
+        r.owner_id = ? OR 
+        r.id IN (SELECT repository_id FROM repository_collaborators WHERE user_id = ?) OR
+        r.is_private = 0
+      )`;
+      params.push(userId, userId);
+    } else {
+      // If not authenticated, only show public repos
+      query += ` AND r.is_private = 0`;
+    }
+
+    query += ` ORDER BY pr.created_at DESC LIMIT 20`;
+
+    const pullRequests = await dbAll(query, params);
+    res.json(pullRequests);
+  } catch (error: any) {
+    console.error('Get activity pulls error:', error);
+    res.status(500).json({ error: 'Server xatosi' });
+  }
+});
+
+router.get('/activity/commits', optionalAuthenticate, async (req: AuthRequest, res) => {
+  try {
+    // For now, return empty array as we don't have a commits table
+    // This can be enhanced later to track commits
+    res.json([]);
+  } catch (error: any) {
+    console.error('Get activity commits error:', error);
+    res.status(500).json({ error: 'Server xatosi' });
+  }
+});
+
 export default router;
 

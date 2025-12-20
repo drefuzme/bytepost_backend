@@ -57,77 +57,13 @@ function initializeDatabase() {
       ban_reason TEXT,
       banned_at DATETIME,
       last_active DATETIME,
+      bio TEXT,
       is_verified INTEGER DEFAULT 0,
       icon_type TEXT DEFAULT 'user',
       verify_icon_type TEXT DEFAULT 'checkCircle2',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
-    // Add role column if it doesn't exist (for existing databases)
-    db.run(`
-    ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'
-  `, (err) => {
-        // Ignore error if column already exists
-    });
-    // Add ban columns if they don't exist
-    db.run(`
-    ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0
-  `, (err) => {
-        // Ignore error if column already exists
-    });
-    db.run(`
-    ALTER TABLE users ADD COLUMN ban_reason TEXT
-  `, (err) => {
-        // Ignore error if column already exists
-    });
-    db.run(`
-    ALTER TABLE users ADD COLUMN banned_at DATETIME
-  `, (err) => {
-        // Ignore error if column already exists
-    });
-    db.run(`
-    ALTER TABLE users ADD COLUMN last_active DATETIME
-  `, (err) => {
-        // Ignore error if column already exists
-    });
-    // Add bio column if it doesn't exist
-    db.run(`
-    ALTER TABLE users ADD COLUMN bio TEXT
-  `, (err) => {
-        // Ignore error if column already exists
-    });
-    db.run(`
-    ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0
-  `, (err) => {
-        // Ignore error if column already exists
-    });
-    db.run(`
-    ALTER TABLE users ADD COLUMN icon_type TEXT DEFAULT 'user'
-  `, (err) => {
-        // Ignore error if column already exists
-    });
-    db.run(`
-    ALTER TABLE users ADD COLUMN verify_icon_type TEXT DEFAULT 'checkCircle2'
-  `, (err) => {
-        // Ignore error if column already exists
-    });
-    // Add group columns to conversations table if they don't exist
-    db.run(`
-    ALTER TABLE conversations ADD COLUMN name TEXT
-  `, (err) => {
-        // Ignore error if column already exists
-    });
-    db.run(`
-    ALTER TABLE conversations ADD COLUMN created_by TEXT
-  `, (err) => {
-        // Ignore error if column already exists
-    });
-    // Add role column to conversation_participants table if it doesn't exist
-    db.run(`
-    ALTER TABLE conversation_participants ADD COLUMN role TEXT DEFAULT 'member'
-  `, (err) => {
-        // Ignore error if column already exists
-    });
     // Repositories table
     db.run(`
     CREATE TABLE IF NOT EXISTS repositories (
@@ -155,7 +91,7 @@ function initializeDatabase() {
       UNIQUE(repository_id, user_id)
     )
   `);
-    // Deploy tokens (for git operations without login)
+    // Deploy tokens
     db.run(`
     CREATE TABLE IF NOT EXISTS deploy_tokens (
       id TEXT PRIMARY KEY,
@@ -169,7 +105,7 @@ function initializeDatabase() {
       FOREIGN KEY (repository_id) REFERENCES repositories(id)
     )
   `);
-    // Posts table (for blog)
+    // Posts table
     db.run(`
     CREATE TABLE IF NOT EXISTS posts (
       id TEXT PRIMARY KEY,
@@ -184,7 +120,7 @@ function initializeDatabase() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
-    // Post likes table
+    // Post likes
     db.run(`
     CREATE TABLE IF NOT EXISTS post_likes (
       id TEXT PRIMARY KEY,
@@ -196,7 +132,7 @@ function initializeDatabase() {
       UNIQUE(post_id, user_id)
     )
   `);
-    // Comments table
+    // Comments
     db.run(`
     CREATE TABLE IF NOT EXISTS comments (
       id TEXT PRIMARY KEY,
@@ -209,7 +145,7 @@ function initializeDatabase() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
-    // Post reposts table
+    // Post reposts
     db.run(`
     CREATE TABLE IF NOT EXISTS post_reposts (
       id TEXT PRIMARY KEY,
@@ -221,7 +157,7 @@ function initializeDatabase() {
       UNIQUE(post_id, user_id)
     )
   `);
-    // Poll votes table
+    // Poll votes
     db.run(`
     CREATE TABLE IF NOT EXISTS poll_votes (
       id TEXT PRIMARY KEY,
@@ -234,7 +170,7 @@ function initializeDatabase() {
       UNIQUE(post_id, user_id)
     )
   `);
-    // Repository stars table
+    // Repository stars
     db.run(`
     CREATE TABLE IF NOT EXISTS repository_stars (
       id TEXT PRIMARY KEY,
@@ -246,7 +182,7 @@ function initializeDatabase() {
       UNIQUE(repository_id, user_id)
     )
   `);
-    // User follows table
+    // User follows
     db.run(`
     CREATE TABLE IF NOT EXISTS user_follows (
       id TEXT PRIMARY KEY,
@@ -259,7 +195,7 @@ function initializeDatabase() {
       CHECK(follower_id != following_id)
     )
   `);
-    // Conversations table (for chat)
+    // Conversations
     db.run(`
     CREATE TABLE IF NOT EXISTS conversations (
       id TEXT PRIMARY KEY,
@@ -271,7 +207,7 @@ function initializeDatabase() {
       FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
     )
   `);
-    // Conversation participants table
+    // Conversation participants
     db.run(`
     CREATE TABLE IF NOT EXISTS conversation_participants (
       id TEXT PRIMARY KEY,
@@ -285,38 +221,20 @@ function initializeDatabase() {
       UNIQUE(conversation_id, user_id)
     )
   `);
-    // Messages table
+    // Messages
     db.run(`
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
       conversation_id TEXT NOT NULL,
       sender_id TEXT NOT NULL,
       content TEXT NOT NULL,
+      image_url TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
       FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
-    // Add image_url column to messages table if it doesn't exist
-    db.run(`
-    ALTER TABLE messages ADD COLUMN image_url TEXT
-  `, (err) => {
-        if (err) {
-            if (err.message?.includes('duplicate column') || err.message?.includes('already exists')) {
-                console.log('✅ image_url column already exists in messages table');
-            }
-            else {
-                console.error('Error adding image_url column:', err);
-            }
-        }
-        else {
-            console.log('✅ Added image_url column to messages table');
-        }
-    });
-    // Create index for faster message queries
-    db.run(`CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at)`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_conversation_participants_user ON conversation_participants(user_id)`);
-    // Labels table (for issues and pull requests)
+    // Labels
     db.run(`
     CREATE TABLE IF NOT EXISTS labels (
       id TEXT PRIMARY KEY,
@@ -329,7 +247,7 @@ function initializeDatabase() {
       UNIQUE(repository_id, name)
     )
   `);
-    // Issues table
+    // Issues
     db.run(`
     CREATE TABLE IF NOT EXISTS issues (
       id TEXT PRIMARY KEY,
@@ -349,7 +267,7 @@ function initializeDatabase() {
       UNIQUE(repository_id, number)
     )
   `);
-    // Pull Requests table
+    // Pull Requests
     db.run(`
     CREATE TABLE IF NOT EXISTS pull_requests (
       id TEXT PRIMARY KEY,
@@ -374,7 +292,7 @@ function initializeDatabase() {
       UNIQUE(repository_id, number)
     )
   `);
-    // Issue labels junction table
+    // Issue labels
     db.run(`
     CREATE TABLE IF NOT EXISTS issue_labels (
       id TEXT PRIMARY KEY,
@@ -385,7 +303,7 @@ function initializeDatabase() {
       UNIQUE(issue_id, label_id)
     )
   `);
-    // Pull request labels junction table
+    // Pull request labels
     db.run(`
     CREATE TABLE IF NOT EXISTS pull_request_labels (
       id TEXT PRIMARY KEY,
@@ -396,7 +314,7 @@ function initializeDatabase() {
       UNIQUE(pull_request_id, label_id)
     )
   `);
-    // Issue/Pull Request comments table
+    // Issue comments
     db.run(`
     CREATE TABLE IF NOT EXISTS issue_comments (
       id TEXT PRIMARY KEY,
@@ -412,16 +330,7 @@ function initializeDatabase() {
       CHECK ((issue_id IS NOT NULL AND pull_request_id IS NULL) OR (issue_id IS NULL AND pull_request_id IS NOT NULL))
     )
   `);
-    // Create indexes for faster queries
-    db.run(`CREATE INDEX IF NOT EXISTS idx_issues_repository ON issues(repository_id, status, created_at)`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_issues_author ON issues(author_id)`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_issues_assignee ON issues(assignee_id)`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_pull_requests_repository ON pull_requests(repository_id, status, created_at)`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_pull_requests_author ON pull_requests(author_id)`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_issue_comments_issue ON issue_comments(issue_id, created_at)`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_issue_comments_pr ON issue_comments(pull_request_id, created_at)`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_labels_repository ON labels(repository_id)`);
-    // Notifications table
+    // Notifications
     db.run(`
     CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY,
@@ -435,9 +344,24 @@ function initializeDatabase() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
-    // Create indexes for notifications
+    // Password reset tokens
+    db.run(`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token TEXT UNIQUE NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+    // Create indexes
+    db.run(`CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_conversation_participants_user ON conversation_participants(user_id)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_issues_repository ON issues(repository_id, status, created_at)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_pull_requests_repository ON pull_requests(repository_id, status, created_at)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read, created_at)`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(type)`);
     console.log('✅ Database tables initialized');
 }
 export default db;
