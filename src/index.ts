@@ -48,6 +48,7 @@ import notificationsRoutes from './routes/notifications.js';
 import searchRoutes from './routes/search.js';
 import uploadFilesRoutes from './routes/upload-files.js';
 import adminRoutes from './routes/admin.js';
+import seoRoutes from './routes/seo.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/repos', repoRoutes);
@@ -66,6 +67,7 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/repos', uploadFilesRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/', seoRoutes); // SEO routes (sitemap.xml, robots.txt)
 
 // Serve uploaded files
 app.use('/uploads', express.static(join(__dirname, '../uploads')));

@@ -638,8 +638,34 @@ router.post('/:owner/:repo.git/git-receive-pack', gitAuth, express.raw({ type: '
         console.error('git-receive-pack stderr:', data.toString());
       });
 
-      gitReceivePack.on('close', (code) => {
+      gitReceivePack.on('close', async (code) => {
         if (code === 0) {
+          console.log('git-receive-pack: Push successful, updating working directory...');
+          // After successful push, update working directory
+          try {
+            const git = simpleGit(repoPath);
+            // Get current branch
+            const branches = await git.branchLocal();
+            const currentBranch = branches.current || 'main' || 'master';
+            
+            // Reset working directory to match the pushed branch
+            await git.reset(['--hard', `origin/${currentBranch}`]).catch(async () => {
+              // If origin doesn't exist, try resetting to local branch
+              await git.reset(['--hard', currentBranch]).catch(() => {
+                console.log('Reset failed, trying checkout...');
+              });
+            });
+            
+            // Or checkout the branch to update working directory
+            await git.checkout(currentBranch).catch(() => {
+              console.log('Checkout failed, continuing...');
+            });
+            
+            console.log('git-receive-pack: Working directory updated');
+          } catch (updateError: any) {
+            console.error('git-receive-pack: Error updating working directory:', updateError);
+            // Continue anyway - push was successful
+          }
           res.end();
         } else {
           console.error('git-receive-pack exited with code:', code);

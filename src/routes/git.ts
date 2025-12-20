@@ -533,10 +533,20 @@ async function getFilesFromGit(git: any, branchName: string): Promise<any[]> {
   const fileList: any[] = [];
   
   try {
-    // Try with branch name
+    // First, try to fetch from remote to get latest changes
+    try {
+      await git.fetch(['origin', branchName]).catch(() => {});
+      await git.fetch(['origin', 'main']).catch(() => {});
+      await git.fetch(['origin', 'master']).catch(() => {});
+    } catch (fetchError) {
+      console.log('Fetch error (non-critical):', fetchError);
+    }
+    
+    // Try with branch name (local)
     try {
       const files = await git.raw(['ls-tree', '-r', '--name-only', branchName]);
       if (files && files.trim()) {
+        console.log(`Found ${files.trim().split('\n').length} files in local branch ${branchName}`);
         return files.trim().split('\n').filter(Boolean).map((file: string) => ({
           path: file,
           name: file.split('/').pop(),
@@ -544,50 +554,104 @@ async function getFilesFromGit(git: any, branchName: string): Promise<any[]> {
         }));
       }
     } catch (e) {
-      // Try with HEAD
-      try {
-        const files = await git.raw(['ls-tree', '-r', '--name-only', 'HEAD']);
-        if (files && files.trim()) {
-          return files.trim().split('\n').filter(Boolean).map((file: string) => ({
-            path: file,
-            name: file.split('/').pop(),
-            type: 'file'
-          }));
-        }
-      } catch (e2) {
-        // Try with all refs
-        try {
-          const refs = await git.raw(['show-ref', '--heads']);
-          if (refs && refs.trim()) {
-            const refLines = refs.trim().split('\n');
-            for (const refLine of refLines) {
-              const parts = refLine.split(' ');
-              if (parts.length >= 2) {
-                const commitHash = parts[0];
-                try {
-                  const files = await git.raw(['ls-tree', '-r', '--name-only', commitHash]);
-                  if (files && files.trim()) {
-                    return files.trim().split('\n').filter(Boolean).map((file: string) => ({
-                      path: file,
-                      name: file.split('/').pop(),
-                      type: 'file'
-                    }));
-                  }
-                } catch (e3) {
-                  continue;
-                }
+      console.log(`Local branch ${branchName} not found or empty, trying alternatives...`);
+    }
+    
+    // Try with origin/branchName (remote)
+    try {
+      const remoteBranch = `origin/${branchName}`;
+      const files = await git.raw(['ls-tree', '-r', '--name-only', remoteBranch]);
+      if (files && files.trim()) {
+        console.log(`Found ${files.trim().split('\n').length} files in remote branch ${remoteBranch}`);
+        return files.trim().split('\n').filter(Boolean).map((file: string) => ({
+          path: file,
+          name: file.split('/').pop(),
+          type: 'file'
+        }));
+      }
+    } catch (e) {
+      console.log(`Remote branch origin/${branchName} not found, trying alternatives...`);
+    }
+    
+    // Try with HEAD
+    try {
+      const files = await git.raw(['ls-tree', '-r', '--name-only', 'HEAD']);
+      if (files && files.trim()) {
+        console.log(`Found ${files.trim().split('\n').length} files in HEAD`);
+        return files.trim().split('\n').filter(Boolean).map((file: string) => ({
+          path: file,
+          name: file.split('/').pop(),
+          type: 'file'
+        }));
+      }
+    } catch (e2) {
+      console.log('HEAD not found, trying refs...');
+    }
+    
+    // Try with origin/main (remote)
+    try {
+      const files = await git.raw(['ls-tree', '-r', '--name-only', 'origin/main']);
+      if (files && files.trim()) {
+        console.log(`Found ${files.trim().split('\n').length} files in origin/main`);
+        return files.trim().split('\n').filter(Boolean).map((file: string) => ({
+          path: file,
+          name: file.split('/').pop(),
+          type: 'file'
+        }));
+      }
+    } catch (e) {
+      console.log('origin/main not found, trying origin/master...');
+    }
+    
+    // Try with origin/master (remote)
+    try {
+      const files = await git.raw(['ls-tree', '-r', '--name-only', 'origin/master']);
+      if (files && files.trim()) {
+        console.log(`Found ${files.trim().split('\n').length} files in origin/master`);
+        return files.trim().split('\n').filter(Boolean).map((file: string) => ({
+          path: file,
+          name: file.split('/').pop(),
+          type: 'file'
+        }));
+      }
+    } catch (e) {
+      console.log('origin/master not found, trying all refs...');
+    }
+    
+    // Try with all refs
+    try {
+      const refs = await git.raw(['show-ref', '--heads', '--tags']);
+      if (refs && refs.trim()) {
+        const refLines = refs.trim().split('\n');
+        console.log(`Trying ${refLines.length} refs...`);
+        for (const refLine of refLines) {
+          const parts = refLine.split(' ');
+          if (parts.length >= 2) {
+            const commitHash = parts[0];
+            try {
+              const files = await git.raw(['ls-tree', '-r', '--name-only', commitHash]);
+              if (files && files.trim()) {
+                console.log(`Found ${files.trim().split('\n').length} files in ref ${commitHash}`);
+                return files.trim().split('\n').filter(Boolean).map((file: string) => ({
+                  path: file,
+                  name: file.split('/').pop(),
+                  type: 'file'
+                }));
               }
+            } catch (e3) {
+              continue;
             }
           }
-        } catch (e3) {
-          // Ignore
         }
       }
+    } catch (e3) {
+      console.log('Error trying all refs:', e3);
     }
   } catch (error) {
     console.error('Error getting files from git:', error);
   }
   
+  console.log('No files found in git, returning empty list');
   return fileList;
 }
 
@@ -636,23 +700,43 @@ router.get('/:owner/:repo/tree/:branch?', optionalAuthenticate, async (req: Auth
         }
       }
       
-      // Check if requested branch exists
-      if (branchName && branches.all.includes(branchName)) {
-        // Checkout to requested branch if it's different from current
-        if (branches.current !== branchName) {
-          console.log(`Switching branch from ${branches.current} to ${branchName}`);
-          await git.checkout(branchName);
-        }
-      }
-      
+      // Determine current branch
       const currentBranch = branchName && branches.all.includes(branchName) ? branchName : (branches.current || 'main' || 'master');
       console.log('Using branch for file listing:', currentBranch);
+      
+      // Checkout to the correct branch and reset to get latest files
+      if (currentBranch && branches.all.includes(currentBranch)) {
+        try {
+          console.log(`Checking out branch: ${currentBranch}`);
+          await git.checkout(currentBranch);
+          
+          // Reset hard to get latest committed files
+          console.log(`Resetting to ${currentBranch} to get latest files...`);
+          await git.reset(['--hard', currentBranch]).catch(async () => {
+            // If reset fails, try to reset to origin
+            console.log('Local reset failed, trying origin...');
+            await git.reset(['--hard', `origin/${currentBranch}`]).catch(() => {
+              console.log('Origin reset also failed, continuing...');
+            });
+          });
+          
+          // Also try to pull latest changes
+          console.log('Pulling latest changes...');
+          await git.pull(['origin', currentBranch], ['--no-edit']).catch(() => {
+            return git.pull(['origin'], ['--no-edit']).catch(() => {
+              console.log('Pull failed, continuing...');
+            });
+          });
+        } catch (checkoutError: any) {
+          console.log('Checkout/reset error:', checkoutError.message);
+        }
+      }
       
       // Try to get files from git first (even if working directory is empty)
       fileList = await getFilesFromGit(git, currentBranch);
       console.log('Files from git:', fileList.length);
       
-      // If no files from git, read from filesystem
+      // If no files from git, read from filesystem (which should now have latest files)
       if (fileList.length === 0) {
         console.log('No files from git, trying filesystem...');
         try {
@@ -660,6 +744,23 @@ router.get('/:owner/:repo/tree/:branch?', optionalAuthenticate, async (req: Auth
           console.log('Files from filesystem:', fileList.length);
         } catch (fsError: any) {
           console.error('Error reading from filesystem:', fsError);
+        }
+      } else {
+        // Even if we got files from git, also check filesystem to make sure we have everything
+        try {
+          const fsFiles = await getFilesFromFS(repoPath);
+          console.log('Files from filesystem (for comparison):', fsFiles.length);
+          // Merge files from both sources (git takes priority)
+          const fsFilePaths = new Set(fsFiles.map((f: any) => f.path));
+          fileList.forEach((file: any) => fsFilePaths.add(file.path));
+          // Add any files from filesystem that aren't in git list
+          fsFiles.forEach((file: any) => {
+            if (!fileList.find((f: any) => f.path === file.path)) {
+              fileList.push(file);
+            }
+          });
+        } catch (fsError: any) {
+          console.log('Filesystem check failed, using git files only');
         }
       }
     } catch (gitError: any) {
@@ -673,11 +774,23 @@ router.get('/:owner/:repo/tree/:branch?', optionalAuthenticate, async (req: Auth
       }
     }
 
-    console.log('Returning files:', fileList.length, 'for branch:', branchName);
-    res.json({ files: fileList, branch: branchName || 'main' });
+      console.log('Returning files:', fileList.length, 'for branch:', branchName);
+      console.log('File list sample (first 5):', fileList.slice(0, 5));
+      
+      // Always return files array, even if empty
+      res.json({ 
+        files: fileList || [], 
+        branch: branchName || 'main',
+        count: fileList.length
+      });
   } catch (error: any) {
     console.error('Get tree error:', error);
-    res.status(500).json({ error: 'Server xatosi', details: error.message });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Server xatosi', 
+      details: error.message,
+      files: [] // Always return empty array on error
+    });
   }
 });
 
