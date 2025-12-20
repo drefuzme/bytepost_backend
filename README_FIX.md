@@ -51,3 +51,4 @@ Agar muvaffaqiyatli bo'lsa, `dist/` papkasida compiled fayllar yaratiladi.
 **Yechim:** Ishlayotgan backend'dan barcha kerakli fayllar ko'chirildi va CORS sozlamalari yangilandi.
 
 
+

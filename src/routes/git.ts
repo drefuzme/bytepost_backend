@@ -10,7 +10,8 @@ import { constants } from 'fs';
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const REPOS_DIR = join(__dirname, '../../repositories');
+// Use environment variable for repos directory, fallback to relative path
+const REPOS_DIR = process.env.REPOS_DIR || join(__dirname, '../../repositories');
 
 // Helper function to check repository access
 async function checkRepositoryAccess(repository: any, userId?: string): Promise<boolean> {
@@ -101,10 +102,47 @@ router.post('/:owner/:repo/branches', authenticate, async (req: AuthRequest, res
 
     const repoPath = join(REPOS_DIR, owner, repo);
     
+    console.log('Git info: Repository path check', {
+      repoPath,
+      REPOS_DIR,
+      owner,
+      repo,
+      repositoryId: repository.id
+    });
+    
     try {
       await access(repoPath, constants.F_OK);
-    } catch {
-      return res.status(404).json({ error: 'Git repository topilmadi' });
+      console.log('Git info: Repository path exists');
+    } catch (accessError: any) {
+      console.error('Git info: Repository path not found', {
+        repoPath,
+        error: accessError.message,
+        REPOS_DIR,
+        repositoryId: repository.id
+      });
+      
+      // Try to create directory and initialize git if it doesn't exist
+      try {
+        await mkdir(repoPath, { recursive: true });
+        console.log('Git info: Created repository directory');
+        
+        // Initialize git repository
+        const newGit = simpleGit(repoPath);
+        try {
+          await newGit.init();
+          await newGit.addConfig('user.name', repository.owner_username || owner);
+          await newGit.addConfig('user.email', 'noreply@bytepost.com');
+          console.log('Git info: Initialized git repository');
+        } catch (initError: any) {
+          console.error('Git info: Failed to initialize git', initError.message);
+        }
+      } catch (mkdirError: any) {
+        console.error('Git info: Failed to create repository directory', mkdirError.message);
+        return res.status(404).json({ 
+          error: 'Git repository topilmadi va yaratib bo\'lmadi',
+          details: process.env.NODE_ENV === 'development' ? mkdirError.message : undefined
+        });
+      }
     }
 
     const git = simpleGit(repoPath);
@@ -263,10 +301,43 @@ router.get('/:owner/:repo/info', optionalAuthenticate, async (req: AuthRequest, 
 
     const repoPath = join(REPOS_DIR, owner, repo);
     
+    console.log('Git info: Repository path check', {
+      repoPath,
+      REPOS_DIR,
+      owner,
+      repo
+    });
+    
     try {
       await access(repoPath, constants.F_OK);
-    } catch {
-      return res.status(404).json({ error: 'Git repository topilmadi' });
+      console.log('Git info: Repository path exists');
+    } catch (accessError: any) {
+      console.error('Git info: Repository path not found', {
+        repoPath,
+        error: accessError.message,
+        REPOS_DIR
+      });
+      
+      // Try to create directory if it doesn't exist (for new repos)
+      try {
+        await mkdir(repoPath, { recursive: true });
+        console.log('Git info: Created repository directory');
+        
+        // Initialize git if directory was just created
+        const git = simpleGit(repoPath);
+        try {
+          await git.init();
+          console.log('Git info: Initialized git repository');
+        } catch (initError: any) {
+          console.error('Git info: Failed to initialize git', initError.message);
+        }
+      } catch (mkdirError: any) {
+        console.error('Git info: Failed to create repository directory', mkdirError.message);
+        return res.status(404).json({ 
+          error: 'Git repository topilmadi va yaratib bo\'lmadi',
+          details: process.env.NODE_ENV === 'development' ? mkdirError.message : undefined
+        });
+      }
     }
 
     const git = simpleGit(repoPath);
@@ -524,7 +595,7 @@ async function getFilesFromGit(git: any, branchName: string): Promise<any[]> {
 router.get('/:owner/:repo/tree/:branch?', optionalAuthenticate, async (req: AuthRequest, res) => {
   try {
     const { owner, repo, branch } = req.params;
-    const branchName = branch || 'main';
+    let branchName = branch || 'main';
 
     const repository: any = await dbGet(`
       SELECT r.* FROM repositories r
@@ -550,6 +621,20 @@ router.get('/:owner/:repo/tree/:branch?', optionalAuthenticate, async (req: Auth
     try {
       // Get current branch
       const branches = await git.branchLocal();
+      console.log('Available branches:', branches.all);
+      console.log('Current branch:', branches.current);
+      console.log('Requested branch:', branchName);
+      
+      // If requested branch doesn't exist, try 'master' or use current branch
+      if (branchName && !branches.all.includes(branchName)) {
+        if (branches.all.includes('master')) {
+          console.log('Branch not found, using master instead');
+          branchName = 'master';
+        } else if (branches.current) {
+          console.log('Branch not found, using current branch:', branches.current);
+          branchName = branches.current;
+        }
+      }
       
       // Check if requested branch exists
       if (branchName && branches.all.includes(branchName)) {
@@ -560,15 +645,19 @@ router.get('/:owner/:repo/tree/:branch?', optionalAuthenticate, async (req: Auth
         }
       }
       
-      const currentBranch = branchName && branches.all.includes(branchName) ? branchName : (branches.current || 'main');
+      const currentBranch = branchName && branches.all.includes(branchName) ? branchName : (branches.current || 'main' || 'master');
+      console.log('Using branch for file listing:', currentBranch);
       
       // Try to get files from git first (even if working directory is empty)
       fileList = await getFilesFromGit(git, currentBranch);
+      console.log('Files from git:', fileList.length);
       
       // If no files from git, read from filesystem
       if (fileList.length === 0) {
+        console.log('No files from git, trying filesystem...');
         try {
           fileList = await getFilesFromFS(repoPath);
+          console.log('Files from filesystem:', fileList.length);
         } catch (fsError: any) {
           console.error('Error reading from filesystem:', fsError);
         }
@@ -578,15 +667,17 @@ router.get('/:owner/:repo/tree/:branch?', optionalAuthenticate, async (req: Auth
       console.log('Git operations failed, reading from filesystem:', gitError.message);
       try {
         fileList = await getFilesFromFS(repoPath);
+        console.log('Files from filesystem (fallback):', fileList.length);
       } catch (fsError: any) {
         console.error('Error reading from filesystem:', fsError);
       }
     }
 
-    res.json({ files: fileList, branch: branchName });
+    console.log('Returning files:', fileList.length, 'for branch:', branchName);
+    res.json({ files: fileList, branch: branchName || 'main' });
   } catch (error: any) {
     console.error('Get tree error:', error);
-    res.status(500).json({ error: 'Server xatosi' });
+    res.status(500).json({ error: 'Server xatosi', details: error.message });
   }
 });
 

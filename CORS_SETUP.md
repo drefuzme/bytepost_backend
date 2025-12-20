@@ -109,3 +109,4 @@ CORS sozlangandan keyin:
 - Frontend'da axios so'rovlarida `withCredentials: true` qo'shing (agar kerak bo'lsa)
 
 
+

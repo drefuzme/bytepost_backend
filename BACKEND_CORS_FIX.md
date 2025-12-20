@@ -93,3 +93,4 @@ Frontend'dan test qiling:
 `dist/index.js` da CORS sozlangan, lekin rebuild qilinganda yo'qoladi. Source kodni topish va u yerda sozlash kerak!
 
 
+

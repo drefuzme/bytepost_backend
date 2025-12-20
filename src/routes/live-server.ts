@@ -12,7 +12,8 @@ const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const TEMP_DIR = join(tmpdir(), 'git-platform-live-server');
-const REPOS_DIR = join(__dirname, '../../repositories');
+// Use environment variable for repos directory, fallback to relative path
+const REPOS_DIR = process.env.REPOS_DIR || join(__dirname, '../../repositories');
 
 // Store active servers
 const activeServers = new Map<string, { port: number; process: any; socketIO?: any; repoPath?: string; branch?: string }>();

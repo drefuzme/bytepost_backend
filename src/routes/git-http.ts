@@ -16,7 +16,8 @@ const execAsync = promisify(exec);
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const REPOS_DIR = join(__dirname, '../../repositories');
+// Use environment variable for repos directory, fallback to relative path
+const REPOS_DIR = process.env.REPOS_DIR || join(__dirname, '../../repositories');
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 
 // Basic auth middleware for git operations (supports both user tokens and deploy tokens)
