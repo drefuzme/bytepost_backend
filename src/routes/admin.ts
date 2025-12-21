@@ -218,6 +218,15 @@ router.patch('/users/:userId/role', async (req: AuthRequest, res) => {
       [userId]
     );
 
+    await logAdminActivity(
+      req.user!.userId,
+      'UPDATE_USER_ROLE',
+      'user',
+      userId,
+      `Changed role to ${role}`,
+      req
+    );
+
     res.json({ message: 'Foydalanuvchi roli yangilandi', user: updatedUser });
   } catch (error: any) {
     console.error('Admin update user role error:', error);
@@ -359,10 +368,26 @@ router.patch('/users/:userId/ban', async (req: AuthRequest, res) => {
         'UPDATE users SET is_banned = 1, ban_reason = ?, banned_at = CURRENT_TIMESTAMP WHERE id = ?',
         [reason || 'Admin tomonidan ban qilindi', userId]
       );
+      await logAdminActivity(
+        req.user!.userId,
+        'BAN_USER',
+        'user',
+        userId,
+        `Banned user. Reason: ${reason || 'No reason provided'}`,
+        req
+      );
     } else {
       await dbRun(
         'UPDATE users SET is_banned = 0, ban_reason = NULL, banned_at = NULL WHERE id = ?',
         [userId]
+      );
+      await logAdminActivity(
+        req.user!.userId,
+        'UNBAN_USER',
+        'user',
+        userId,
+        'Unbanned user',
+        req
       );
     }
 
@@ -391,7 +416,18 @@ router.delete('/users/:userId', async (req: AuthRequest, res) => {
       return res.status(400).json({ error: 'O\'zingizni o\'chira olmaysiz' });
     }
 
+    const userToDelete: any = await dbGet('SELECT username, email FROM users WHERE id = ?', [userId]);
+    
     await dbRun('DELETE FROM users WHERE id = ?', [userId]);
+
+    await logAdminActivity(
+      req.user!.userId,
+      'DELETE_USER',
+      'user',
+      userId,
+      `Deleted user: ${userToDelete?.username || userId}`,
+      req
+    );
 
     res.json({ message: 'Foydalanuvchi o\'chirildi' });
   } catch (error: any) {
@@ -503,7 +539,18 @@ router.delete('/repositories/:repoId', async (req: AuthRequest, res) => {
   try {
     const { repoId } = req.params;
 
+    const repoToDelete: any = await dbGet('SELECT name FROM repositories WHERE id = ?', [repoId]);
+    
     await dbRun('DELETE FROM repositories WHERE id = ?', [repoId]);
+
+    await logAdminActivity(
+      req.user!.userId,
+      'DELETE_REPOSITORY',
+      'repository',
+      repoId,
+      `Deleted repository: ${repoToDelete?.name || repoId}`,
+      req
+    );
 
     res.json({ message: 'Repository o\'chirildi' });
   } catch (error: any) {
@@ -609,7 +656,18 @@ router.delete('/posts/:postId', async (req: AuthRequest, res) => {
   try {
     const { postId } = req.params;
 
+    const postToDelete: any = await dbGet('SELECT id FROM posts WHERE id = ?', [postId]);
+    
     await dbRun('DELETE FROM posts WHERE id = ?', [postId]);
+
+    await logAdminActivity(
+      req.user!.userId,
+      'DELETE_POST',
+      'post',
+      postId,
+      `Deleted post: ${postId}`,
+      req
+    );
 
     res.json({ message: 'Post o\'chirildi' });
   } catch (error: any) {
@@ -763,6 +821,210 @@ router.delete('/pull-requests/:prId', async (req: AuthRequest, res) => {
     res.json({ message: 'Pull Request o\'chirildi' });
   } catch (error: any) {
     console.error('Admin delete pull request error:', error);
+    res.status(500).json({ error: 'Server xatosi' });
+  }
+});
+
+// Helper function to log admin activity
+async function logAdminActivity(
+  adminId: string,
+  action: string,
+  targetType: string | null,
+  targetId: string | null,
+  details: string | null,
+  req: AuthRequest
+) {
+  try {
+    const { v4: uuidv4 } = await import('uuid');
+    const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    
+    await dbRun(
+      `INSERT INTO admin_activity_logs (id, admin_id, action, target_type, target_id, details, ip_address, user_agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [uuidv4(), adminId, action, targetType, targetId, details, ipAddress, userAgent]
+    );
+  } catch (error) {
+    console.error('Error logging admin activity:', error);
+  }
+}
+
+// Get activity logs
+router.get('/activity-logs', async (req: AuthRequest, res) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 50;
+    const offset = (page - 1) * limit;
+
+    const logs = await dbAll(`
+      SELECT 
+        l.*,
+        u.username as admin_username,
+        u.email as admin_email
+      FROM admin_activity_logs l
+      JOIN users u ON l.admin_id = u.id
+      ORDER BY l.created_at DESC
+      LIMIT ? OFFSET ?
+    `, [limit, offset]);
+
+    const total = await dbGet('SELECT COUNT(*) as count FROM admin_activity_logs');
+
+    res.json({
+      logs,
+      pagination: {
+        page,
+        limit,
+        total: total?.count || 0,
+        totalPages: Math.ceil((total?.count || 0) / limit)
+      }
+    });
+  } catch (error: any) {
+    console.error('Admin activity logs error:', error);
+    res.status(500).json({ error: 'Server xatosi' });
+  }
+});
+
+// Get system settings
+router.get('/settings', async (req: AuthRequest, res) => {
+  try {
+    const settings = await dbAll('SELECT * FROM system_settings ORDER BY key');
+    const settingsObj: any = {};
+    settings.forEach((s: any) => {
+      settingsObj[s.key] = {
+        value: s.value,
+        description: s.description,
+        updated_at: s.updated_at,
+        updated_by: s.updated_by
+      };
+    });
+    res.json(settingsObj);
+  } catch (error: any) {
+    console.error('Admin get settings error:', error);
+    res.status(500).json({ error: 'Server xatosi' });
+  }
+});
+
+// Update system settings
+router.patch('/settings', async (req: AuthRequest, res) => {
+  try {
+    const { key, value } = req.body;
+
+    if (!key || value === undefined) {
+      return res.status(400).json({ error: 'Key va value kiritilishi kerak' });
+    }
+
+    await dbRun(
+      `INSERT INTO system_settings (key, value, updated_by, updated_at)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET
+         value = excluded.value,
+         updated_by = excluded.updated_by,
+         updated_at = CURRENT_TIMESTAMP`,
+      [key, value, req.user!.userId]
+    );
+
+    await logAdminActivity(
+      req.user!.userId,
+      'UPDATE_SETTING',
+      'system_setting',
+      key,
+      `Updated ${key} to ${value}`,
+      req
+    );
+
+    res.json({ message: 'Sozlama yangilandi' });
+  } catch (error: any) {
+    console.error('Admin update settings error:', error);
+    res.status(500).json({ error: 'Server xatosi' });
+  }
+});
+
+// Get advanced statistics
+router.get('/statistics/advanced', async (req: AuthRequest, res) => {
+  try {
+    const period = req.query.period as string || '7'; // days
+    
+    // User growth
+    const userGrowth = await dbAll(`
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(*) as count
+      FROM users
+      WHERE created_at >= datetime('now', '-' || ? || ' days')
+      GROUP BY DATE(created_at)
+      ORDER BY date
+    `, [period]);
+
+    // Repository growth
+    const repoGrowth = await dbAll(`
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(*) as count
+      FROM repositories
+      WHERE created_at >= datetime('now', '-' || ? || ' days')
+      GROUP BY DATE(created_at)
+      ORDER BY date
+    `, [period]);
+
+    // Post growth
+    const postGrowth = await dbAll(`
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(*) as count
+      FROM posts
+      WHERE created_at >= datetime('now', '-' || ? || ' days')
+      GROUP BY DATE(created_at)
+      ORDER BY date
+    `, [period]);
+
+    // Active users (last 30 days)
+    const activeUsers = await dbGet(`
+      SELECT COUNT(DISTINCT user_id) as count
+      FROM (
+        SELECT user_id FROM posts WHERE created_at >= datetime('now', '-30 days')
+        UNION
+        SELECT owner_id as user_id FROM repositories WHERE updated_at >= datetime('now', '-30 days')
+        UNION
+        SELECT author_id as user_id FROM issues WHERE created_at >= datetime('now', '-30 days')
+      )
+    `);
+
+    // Top repositories by stars
+    const topRepos = await dbAll(`
+      SELECT 
+        r.id, r.name, r.description,
+        u.username as owner_username,
+        COUNT(rs.id) as stars_count
+      FROM repositories r
+      JOIN users u ON r.owner_id = u.id
+      LEFT JOIN repository_stars rs ON r.id = rs.repository_id
+      GROUP BY r.id
+      ORDER BY stars_count DESC
+      LIMIT 10
+    `);
+
+    // Top users by activity
+    const topUsers = await dbAll(`
+      SELECT 
+        u.id, u.username, u.email,
+        (SELECT COUNT(*) FROM repositories WHERE owner_id = u.id) as repos_count,
+        (SELECT COUNT(*) FROM posts WHERE user_id = u.id) as posts_count,
+        (SELECT COUNT(*) FROM issues WHERE author_id = u.id) as issues_count
+      FROM users u
+      ORDER BY (repos_count + posts_count + issues_count) DESC
+      LIMIT 10
+    `);
+
+    res.json({
+      userGrowth,
+      repoGrowth,
+      postGrowth,
+      activeUsers: activeUsers?.count || 0,
+      topRepos,
+      topUsers
+    });
+  } catch (error: any) {
+    console.error('Admin advanced statistics error:', error);
     res.status(500).json({ error: 'Server xatosi' });
   }
 });
