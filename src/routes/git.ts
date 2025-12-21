@@ -722,8 +722,8 @@ router.get('/:owner/:repo/tree/:branch?', optionalAuthenticate, async (req: Auth
           
           // Also try to pull latest changes
           console.log('Pulling latest changes...');
-          await git.pull(['origin', currentBranch], ['--no-edit']).catch(() => {
-            return git.pull(['origin'], ['--no-edit']).catch(() => {
+          await git.pull('origin', currentBranch, ['--no-edit']).catch(() => {
+            return git.pull('origin', currentBranch).catch(() => {
               console.log('Pull failed, continuing...');
             });
           });

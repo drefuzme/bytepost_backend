@@ -362,6 +362,42 @@ function initializeDatabase() {
     db.run(`CREATE INDEX IF NOT EXISTS idx_issues_repository ON issues(repository_id, status, created_at)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_pull_requests_repository ON pull_requests(repository_id, status, created_at)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read, created_at)`);
+    // Admin activity logs
+    db.run(`
+    CREATE TABLE IF NOT EXISTS admin_activity_logs (
+      id TEXT PRIMARY KEY,
+      admin_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_type TEXT,
+      target_id TEXT,
+      details TEXT,
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (admin_id) REFERENCES users(id)
+    )
+  `);
+    // System settings
+    db.run(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      description TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_by TEXT,
+      FOREIGN KEY (updated_by) REFERENCES users(id)
+    )
+  `);
+    // Initialize default settings
+    db.run(`
+    INSERT OR IGNORE INTO system_settings (key, value, description) VALUES
+    ('site_name', 'BytePost', 'Sayt nomi'),
+    ('site_description', 'Professional kod hosting va hamkorlik platformasi', 'Sayt tavsifi'),
+    ('registration_enabled', 'true', 'Registratsiya yoqilgan'),
+    ('maintenance_mode', 'false', 'Texnik xizmat ko''rsatish rejimi'),
+    ('max_file_size', '10485760', 'Maksimal fayl hajmi (bytes)'),
+    ('max_repo_size', '1073741824', 'Maksimal repository hajmi (bytes)')
+  `);
     console.log('✅ Database tables initialized');
 }
 export default db;

@@ -59,8 +59,12 @@ router.post('/:owner/:repo/tokens', authenticate, async (req, res) => {
             name,
             permissions: perms,
             expiresAt,
-            // Git URL with token
-            gitUrl: `http://${token}@localhost:5000/${owner}/${repo}.git`
+            // Git URL with token - use environment variable or default
+            gitUrl: (() => {
+                const apiUrl = process.env.API_URL || process.env.RAILWAY_PUBLIC_DOMAIN || 'http://localhost:5000';
+                const host = apiUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+                return `http://${token}@${host}/${owner}/${repo}.git`;
+            })()
         });
     }
     catch (error) {

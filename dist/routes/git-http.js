@@ -14,7 +14,8 @@ const execAsync = promisify(exec);
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const REPOS_DIR = join(__dirname, '../../repositories');
+// Use environment variable for repos directory, fallback to relative path
+const REPOS_DIR = process.env.REPOS_DIR || join(__dirname, '../../repositories');
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 // Basic auth middleware for git operations (supports both user tokens and deploy tokens)
 const gitAuth = async (req, res, next) => {
@@ -575,8 +576,32 @@ router.post('/:owner/:repo.git/git-receive-pack', gitAuth, express.raw({ type: '
             gitReceivePack.stderr.on('data', (data) => {
                 console.error('git-receive-pack stderr:', data.toString());
             });
-            gitReceivePack.on('close', (code) => {
+            gitReceivePack.on('close', async (code) => {
                 if (code === 0) {
+                    console.log('git-receive-pack: Push successful, updating working directory...');
+                    // After successful push, update working directory
+                    try {
+                        const git = simpleGit(repoPath);
+                        // Get current branch
+                        const branches = await git.branchLocal();
+                        const currentBranch = branches.current || 'main' || 'master';
+                        // Reset working directory to match the pushed branch
+                        await git.reset(['--hard', `origin/${currentBranch}`]).catch(async () => {
+                            // If origin doesn't exist, try resetting to local branch
+                            await git.reset(['--hard', currentBranch]).catch(() => {
+                                console.log('Reset failed, trying checkout...');
+                            });
+                        });
+                        // Or checkout the branch to update working directory
+                        await git.checkout(currentBranch).catch(() => {
+                            console.log('Checkout failed, continuing...');
+                        });
+                        console.log('git-receive-pack: Working directory updated');
+                    }
+                    catch (updateError) {
+                        console.error('git-receive-pack: Error updating working directory:', updateError);
+                        // Continue anyway - push was successful
+                    }
                     res.end();
                 }
                 else {

@@ -8,7 +8,8 @@ import { access, constants, writeFile, mkdir } from 'fs/promises';
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const REPOS_DIR = join(__dirname, '../../repositories');
+// Use environment variable for repos directory, fallback to relative path
+const REPOS_DIR = process.env.REPOS_DIR || join(__dirname, '../../repositories');
 // Simple push endpoint - accepts files and commits them
 router.post('/:owner/:repo/push', authenticate, async (req, res) => {
     try {

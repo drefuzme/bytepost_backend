@@ -10,7 +10,8 @@ import { createNotification } from './notifications.js';
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const REPOS_DIR = join(__dirname, '../../repositories');
+// Use environment variable for repos directory, fallback to relative path
+const REPOS_DIR = process.env.REPOS_DIR || join(__dirname, '../../repositories');
 // Ensure repos directory exists
 mkdir(REPOS_DIR, { recursive: true }).catch(console.error);
 // Get all repositories
