@@ -38,6 +38,33 @@ const createTransporter = () => {
   }
 };
 
+// Check registration status (public endpoint)
+router.get('/registration-status', async (req, res) => {
+  try {
+    const registrationSetting: any = await dbGet(
+      'SELECT value FROM system_settings WHERE key = ?',
+      ['registration_enabled']
+    );
+    
+    const whitelistSetting: any = await dbGet(
+      'SELECT value FROM system_settings WHERE key = ?',
+      ['email_whitelist_enabled']
+    );
+
+    res.json({
+      registrationEnabled: registrationSetting?.value !== 'false',
+      emailWhitelistEnabled: whitelistSetting?.value === 'true'
+    });
+  } catch (error: any) {
+    console.error('Registration status check error:', error);
+    // Default to enabled if we can't check
+    res.json({
+      registrationEnabled: true,
+      emailWhitelistEnabled: false
+    });
+  }
+});
+
 // Register
 router.post('/register', async (req, res) => {
   try {
@@ -45,6 +72,40 @@ router.post('/register', async (req, res) => {
 
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Barcha maydonlar to\'ldirilishi kerak' });
+    }
+
+    // Check if registration is enabled
+    const registrationSetting: any = await dbGet(
+      'SELECT value FROM system_settings WHERE key = ?',
+      ['registration_enabled']
+    );
+    
+    if (registrationSetting?.value === 'false') {
+      return res.status(403).json({ error: 'Registratsiya hozircha o\'chirilgan' });
+    }
+
+    // Check email whitelist if enabled
+    const whitelistSetting: any = await dbGet(
+      'SELECT value FROM system_settings WHERE key = ?',
+      ['email_whitelist_enabled']
+    );
+
+    if (whitelistSetting?.value === 'true') {
+      const emailDomain = email.split('@')[1]?.toLowerCase();
+      if (!emailDomain) {
+        return res.status(400).json({ error: 'Noto\'g\'ri email formati' });
+      }
+
+      const whitelistEntry: any = await dbGet(
+        'SELECT * FROM email_whitelist WHERE email_domain = ?',
+        [emailDomain]
+      );
+
+      if (!whitelistEntry) {
+        return res.status(403).json({ 
+          error: `Bu email domeni ruxsat etilmagan. Faqat ruxsat etilgan email domenlari orqali registratsiya qilish mumkin.` 
+        });
+      }
     }
 
     // Check if user exists

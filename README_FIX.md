@@ -52,3 +52,4 @@ Agar muvaffaqiyatli bo'lsa, `dist/` papkasida compiled fayllar yaratiladi.
 
 
 
+

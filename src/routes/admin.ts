@@ -1029,5 +1029,77 @@ router.get('/statistics/advanced', async (req: AuthRequest, res) => {
   }
 });
 
+// Get email whitelist
+router.get('/email-whitelist', async (req: AuthRequest, res) => {
+  try {
+    const whitelist = await dbAll('SELECT * FROM email_whitelist ORDER BY email_domain');
+    res.json({ whitelist });
+  } catch (error: any) {
+    console.error('Admin get email whitelist error:', error);
+    res.status(500).json({ error: 'Server xatosi' });
+  }
+});
+
+// Add email domain to whitelist
+router.post('/email-whitelist', async (req: AuthRequest, res) => {
+  try {
+    const { email_domain, description } = req.body;
+
+    if (!email_domain) {
+      return res.status(400).json({ error: 'Email domeni kiritilishi kerak' });
+    }
+
+    // Normalize domain (lowercase, remove @ if present)
+    const normalizedDomain = email_domain.toLowerCase().replace('@', '');
+
+    const { v4: uuidv4 } = await import('uuid');
+    await dbRun(
+      'INSERT INTO email_whitelist (id, email_domain, description, created_by) VALUES (?, ?, ?, ?)',
+      [uuidv4(), normalizedDomain, description || null, req.user!.userId]
+    );
+
+    await logAdminActivity(
+      req.user!.userId,
+      'ADD_EMAIL_WHITELIST',
+      'email_whitelist',
+      normalizedDomain,
+      `Added email domain to whitelist: ${normalizedDomain}`,
+      req
+    );
+
+    res.json({ message: 'Email domeni whitelist-ga qo\'shildi' });
+  } catch (error: any) {
+    if (error.message.includes('UNIQUE constraint')) {
+      return res.status(400).json({ error: 'Bu email domeni allaqachon whitelist-da mavjud' });
+    }
+    console.error('Admin add email whitelist error:', error);
+    res.status(500).json({ error: 'Server xatosi' });
+  }
+});
+
+// Delete email domain from whitelist
+router.delete('/email-whitelist/:domain', async (req: AuthRequest, res) => {
+  try {
+    const { domain } = req.params;
+    const normalizedDomain = decodeURIComponent(domain).toLowerCase().replace('@', '');
+
+    await dbRun('DELETE FROM email_whitelist WHERE email_domain = ?', [normalizedDomain]);
+
+    await logAdminActivity(
+      req.user!.userId,
+      'DELETE_EMAIL_WHITELIST',
+      'email_whitelist',
+      normalizedDomain,
+      `Removed email domain from whitelist: ${normalizedDomain}`,
+      req
+    );
+
+    res.json({ message: 'Email domeni whitelist-dan olib tashlandi' });
+  } catch (error: any) {
+    console.error('Admin delete email whitelist error:', error);
+    res.status(500).json({ error: 'Server xatosi' });
+  }
+});
+
 export default router;
 

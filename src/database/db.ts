@@ -413,6 +413,18 @@ function initializeDatabase() {
     )
   `);
 
+  // Email whitelist
+  db.run(`
+    CREATE TABLE IF NOT EXISTS email_whitelist (
+      id TEXT PRIMARY KEY,
+      email_domain TEXT NOT NULL UNIQUE,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_by TEXT,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `);
+
   // Initialize default settings
   db.run(`
     INSERT OR IGNORE INTO system_settings (key, value, description) VALUES
@@ -421,7 +433,8 @@ function initializeDatabase() {
     ('registration_enabled', 'true', 'Registratsiya yoqilgan'),
     ('maintenance_mode', 'false', 'Texnik xizmat ko''rsatish rejimi'),
     ('max_file_size', '10485760', 'Maksimal fayl hajmi (bytes)'),
-    ('max_repo_size', '1073741824', 'Maksimal repository hajmi (bytes)')
+    ('max_repo_size', '1073741824', 'Maksimal repository hajmi (bytes)'),
+    ('email_whitelist_enabled', 'false', 'Email whitelist yoqilgan')
   `);
 
   console.log('✅ Database tables initialized');
